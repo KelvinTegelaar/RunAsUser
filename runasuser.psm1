@@ -3,9 +3,9 @@ function Invoke-AsCurrentUser{
     param (
         [Parameter(Mandatory=$true)]
         [scriptblock]
-        $scriptblock
+        $ScriptBlock
     )
-    $Source = @"
+    $source = @"
 using System;  
 using System.Runtime.InteropServices;
  
@@ -276,13 +276,13 @@ namespace murrayju.ProcessExtensions
  
 "@
 
-    if ("murrayju.ProcessExtensions.ProcessExtensions" -as [type]) {} else {
+    if (!("murrayju.ProcessExtensions.ProcessExtensions" -as [type])) {
         Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $Source -Language CSharp 
     }
     $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($scriptblock))
-    $Privs =  & whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
-    if ($Privs.state -eq "Disabled") {
-        write-host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
+    $privs =  & whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
+    if ($privs.state -eq "Disabled") {
+        Write-Host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
         exit 1
     }
 
