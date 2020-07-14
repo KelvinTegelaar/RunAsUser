@@ -14,6 +14,10 @@ function Invoke-AsCurrentUser {
         Throw [System.Exception] "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
     }
     else {
+        try {
         [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser("C:\Windows\System32\WindowsPowershell\v1.0\Powershell.exe", "-bypassexecutionpolicy -Window Normal -EncodedCommand $($encodedcommand)", "C:\Windows\System32\WindowsPowershell\v1.0", $false) | Out-Null
+        } catch {
+            Throw [System.Exception] "Could not execute as currently logged on user: $($_.Exception.Message)"
+        }
     }
 }
