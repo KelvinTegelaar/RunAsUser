@@ -3,30 +3,30 @@ function Invoke-AsCurrentUser{
     param (
         [Parameter(Mandatory=$true)]
         [scriptblock]
-        $scriptblock
+        $ScriptBlock
     )
-    $Source = @"
-using System;  
+    $source = @"
+using System;
 using System.Runtime.InteropServices;
- 
-namespace murrayju.ProcessExtensions  
+
+namespace murrayju.ProcessExtensions
 {
     public static class ProcessExtensions
     {
         #region Win32 Constants
- 
+
         private const int CREATE_UNICODE_ENVIRONMENT = 0x00000400;
         private const int CREATE_NO_WINDOW = 0x08000000;
- 
+
         private const int CREATE_NEW_CONSOLE = 0x00000010;
- 
+
         private const uint INVALID_SESSION_ID = 0xFFFFFFFF;
         private static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
- 
+
         #endregion
- 
+
         #region DllImports
- 
+
         [DllImport("advapi32.dll", EntryPoint = "CreateProcessAsUser", SetLastError = true, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
         private static extern bool CreateProcessAsUser(
             IntPtr hToken,
@@ -40,7 +40,7 @@ namespace murrayju.ProcessExtensions
             String lpCurrentDirectory,
             ref STARTUPINFO lpStartupInfo,
             out PROCESS_INFORMATION lpProcessInformation);
- 
+
         [DllImport("advapi32.dll", EntryPoint = "DuplicateTokenEx")]
         private static extern bool DuplicateTokenEx(
             IntPtr ExistingTokenHandle,
@@ -49,23 +49,23 @@ namespace murrayju.ProcessExtensions
             int TokenType,
             int ImpersonationLevel,
             ref IntPtr DuplicateTokenHandle);
- 
+
         [DllImport("userenv.dll", SetLastError = true)]
         private static extern bool CreateEnvironmentBlock(ref IntPtr lpEnvironment, IntPtr hToken, bool bInherit);
- 
+
         [DllImport("userenv.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DestroyEnvironmentBlock(IntPtr lpEnvironment);
- 
+
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hSnapshot);
- 
+
         [DllImport("kernel32.dll")]
         private static extern uint WTSGetActiveConsoleSessionId();
- 
+
         [DllImport("Wtsapi32.dll")]
         private static extern uint WTSQueryUserToken(uint SessionId, ref IntPtr phToken);
- 
+
         [DllImport("wtsapi32.dll", SetLastError = true)]
         private static extern int WTSEnumerateSessions(
             IntPtr hServer,
@@ -73,11 +73,11 @@ namespace murrayju.ProcessExtensions
             int Version,
             ref IntPtr ppSessionInfo,
             ref int pCount);
- 
+
         #endregion
- 
+
         #region Win32 Structs
- 
+
         private enum SW
         {
             SW_HIDE = 0,
@@ -95,7 +95,7 @@ namespace murrayju.ProcessExtensions
             SW_SHOWDEFAULT = 10,
             SW_MAX = 10
         }
- 
+
         private enum WTS_CONNECTSTATE_CLASS
         {
             WTSActive,
@@ -109,7 +109,7 @@ namespace murrayju.ProcessExtensions
             WTSDown,
             WTSInit
         }
- 
+
         [StructLayout(LayoutKind.Sequential)]
         private struct PROCESS_INFORMATION
         {
@@ -118,7 +118,7 @@ namespace murrayju.ProcessExtensions
             public uint dwProcessId;
             public uint dwThreadId;
         }
- 
+
         private enum SECURITY_IMPERSONATION_LEVEL
         {
             SecurityAnonymous = 0,
@@ -126,7 +126,7 @@ namespace murrayju.ProcessExtensions
             SecurityImpersonation = 2,
             SecurityDelegation = 3,
         }
- 
+
         [StructLayout(LayoutKind.Sequential)]
         private struct STARTUPINFO
         {
@@ -149,26 +149,26 @@ namespace murrayju.ProcessExtensions
             public IntPtr hStdOutput;
             public IntPtr hStdError;
         }
- 
+
         private enum TOKEN_TYPE
         {
             TokenPrimary = 1,
             TokenImpersonation = 2
         }
- 
+
         [StructLayout(LayoutKind.Sequential)]
         private struct WTS_SESSION_INFO
         {
             public readonly UInt32 SessionID;
- 
+
             [MarshalAs(UnmanagedType.LPStr)]
             public readonly String pWinStationName;
- 
+
             public readonly WTS_CONNECTSTATE_CLASS State;
         }
- 
+
         #endregion
- 
+
         // Gets the user token from the currently active session
         private static bool GetSessionUserToken(ref IntPtr phUserToken)
         {
@@ -177,44 +177,44 @@ namespace murrayju.ProcessExtensions
             var activeSessionId = INVALID_SESSION_ID;
             var pSessionInfo = IntPtr.Zero;
             var sessionCount = 0;
- 
+
             // Get a handle to the user access token for the current active session.
             if (WTSEnumerateSessions(WTS_CURRENT_SERVER_HANDLE, 0, 1, ref pSessionInfo, ref sessionCount) != 0)
             {
                 var arrayElementSize = Marshal.SizeOf(typeof(WTS_SESSION_INFO));
                 var current = pSessionInfo;
- 
+
                 for (var i = 0; i < sessionCount; i++)
                 {
                     var si = (WTS_SESSION_INFO)Marshal.PtrToStructure((IntPtr)current, typeof(WTS_SESSION_INFO));
                     current += arrayElementSize;
- 
+
                     if (si.State == WTS_CONNECTSTATE_CLASS.WTSActive)
                     {
                         activeSessionId = si.SessionID;
                     }
                 }
             }
- 
+
             // If enumerating did not work, fall back to the old method
             if (activeSessionId == INVALID_SESSION_ID)
             {
                 activeSessionId = WTSGetActiveConsoleSessionId();
             }
- 
+
             if (WTSQueryUserToken(activeSessionId, ref hImpersonationToken) != 0)
             {
                 // Convert the impersonation token to a primary token
                 bResult = DuplicateTokenEx(hImpersonationToken, 0, IntPtr.Zero,
                     (int)SECURITY_IMPERSONATION_LEVEL.SecurityImpersonation, (int)TOKEN_TYPE.TokenPrimary,
                     ref phUserToken);
- 
+
                 CloseHandle(hImpersonationToken);
             }
- 
+
             return bResult;
         }
- 
+
         public static bool StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true)
         {
             var hUserToken = IntPtr.Zero;
@@ -222,25 +222,25 @@ namespace murrayju.ProcessExtensions
             var procInfo = new PROCESS_INFORMATION();
             var pEnv = IntPtr.Zero;
             int iResultOfCreateProcessAsUser;
- 
+
             startInfo.cb = Marshal.SizeOf(typeof(STARTUPINFO));
- 
+
             try
             {
                 if (!GetSessionUserToken(ref hUserToken))
                 {
                     throw new Exception("StartProcessAsCurrentUser: GetSessionUserToken failed.");
                 }
- 
+
                 uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
                 startInfo.wShowWindow = (short)(visible ? SW.SW_SHOW : SW.SW_HIDE);
                 startInfo.lpDesktop = "winsta0\\default";
- 
+
                 if (!CreateEnvironmentBlock(ref pEnv, hUserToken, false))
                 {
                     throw new Exception("StartProcessAsCurrentUser: CreateEnvironmentBlock failed.");
                 }
- 
+
                 if (!CreateProcessAsUser(hUserToken,
                     appPath, // Application Name
                     cmdLine, // Command Line
@@ -255,7 +255,7 @@ namespace murrayju.ProcessExtensions
                 {
                     throw new Exception("StartProcessAsCurrentUser: CreateProcessAsUser failed.\n");
                 }
- 
+
                 iResultOfCreateProcessAsUser = Marshal.GetLastWin32Error();
             }
             finally
@@ -272,19 +272,15 @@ namespace murrayju.ProcessExtensions
         }
     }
 }
- 
- 
 "@
-
-    if ("murrayju.ProcessExtensions.ProcessExtensions" -as [type]) {} else {
-        Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $Source -Language CSharp 
+    if (!("murrayju.ProcessExtensions.ProcessExtensions" -as [type])) {
+        Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $source -Language CSharp
     }
-    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($scriptblock))
-    $Privs =  & whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
-    if ($Privs.state -eq "Disabled") {
-        write-host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
+    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
+    $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
+    if ($privs.State -eq "Disabled") {
+        Write-Host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
         exit 1
     }
-
-   [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser("C:\Windows\System32\WindowsPowershell\v1.0\Powershell.exe", "-bypassexecutionpolicy -noprofile -EncodedCommand $($encodedcommand)", "C:\Windows\System32\WindowsPowershell\v1.0", $false) | Out-Null
+   [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser("C:\Windows\System32\WindowsPowershell\v1.0\Powershell.exe", "-bypassexecutionpolicy -Window Normal -EncodedCommand $($encodedcommand)", "C:\Windows\System32\WindowsPowershell\v1.0", $false) | Out-Null
 }
