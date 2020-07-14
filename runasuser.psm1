@@ -272,19 +272,15 @@ namespace murrayju.ProcessExtensions
         }
     }
 }
-
-
 "@
-
     if (!("murrayju.ProcessExtensions.ProcessExtensions" -as [type])) {
-        Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $Source -Language CSharp
+        Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $source -Language CSharp
     }
-    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($scriptblock))
+    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
-    if ($privs.state -eq "Disabled") {
+    if ($privs.State -eq "Disabled") {
         Write-Host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
         exit 1
     }
-
    [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser("C:\Windows\System32\WindowsPowershell\v1.0\Powershell.exe", "-bypassexecutionpolicy -Window Normal -EncodedCommand $($encodedcommand)", "C:\Windows\System32\WindowsPowershell\v1.0", $false) | Out-Null
 }
