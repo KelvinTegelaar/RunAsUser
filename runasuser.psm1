@@ -1,11 +1,4 @@
-function Invoke-AsCurrentUser{
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory=$true)]
-        [scriptblock]
-        $ScriptBlock
-    )
-    $source = @"
+$script:source = @"
 using System;
 using System.Runtime.InteropServices;
 
@@ -273,14 +266,15 @@ namespace murrayju.ProcessExtensions
     }
 }
 "@
-    if (!("murrayju.ProcessExtensions.ProcessExtensions" -as [type])) {
-        Add-Type -ReferencedAssemblies 'System', 'System.Runtime.InteropServices' -TypeDefinition $source -Language CSharp
+$Public  = @(Get-ChildItem -Path $PSScriptRoot\Public\*.ps1 -ErrorAction SilentlyContinue)
+foreach ($import in @($Public))
+{
+    try
+    {
+        . $import.FullName
     }
-    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
-    $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object {$_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege'}
-    if ($privs.State -eq "Disabled") {
-        Write-Host "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token." -ForegroundColor Red
-        exit 1
+    catch
+    {
+        Write-Error -Message "Failed to import function $($import.FullName): $_"
     }
-   [murrayju.ProcessExtensions.ProcessExtensions]::StartProcessAsCurrentUser("C:\Windows\System32\WindowsPowershell\v1.0\Powershell.exe", "-bypassexecutionpolicy -Window Normal -EncodedCommand $($encodedcommand)", "C:\Windows\System32\WindowsPowershell\v1.0", $false) | Out-Null
 }
