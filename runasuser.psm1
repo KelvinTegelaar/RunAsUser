@@ -213,7 +213,7 @@ namespace murrayju.ProcessExtensions
             return bResult;
         }
 
-        public static bool StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true)
+        public static bool StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true, int wait = -1)
         {
             var hUserToken = IntPtr.Zero;
             var startInfo = new STARTUPINFO();
@@ -253,7 +253,7 @@ namespace murrayju.ProcessExtensions
                 {
                     throw new Exception("StartProcessAsCurrentUser: CreateProcessAsUser failed.\n");
                 }
-                WaitForSingleObject( procInfo.hProcess, -1 );
+                WaitForSingleObject( procInfo.hProcess, wait);
                 iResultOfCreateProcessAsUser = Marshal.GetLastWin32Error();
             }
             finally
