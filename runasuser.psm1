@@ -20,6 +20,11 @@ namespace murrayju.ProcessExtensions
 
         #region DllImports
 
+        [DllImport("kernel32", SetLastError=true)]
+        public static extern int WaitForSingleObject(
+          IntPtr hHandle,
+          int dwMilliseconds);
+
         [DllImport("advapi32.dll", EntryPoint = "CreateProcessAsUser", SetLastError = true, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.StdCall)]
         private static extern bool CreateProcessAsUser(
             IntPtr hToken,
@@ -248,7 +253,7 @@ namespace murrayju.ProcessExtensions
                 {
                     throw new Exception("StartProcessAsCurrentUser: CreateProcessAsUser failed.\n");
                 }
-
+                WaitForSingleObject( procInfo.hProcess, -1 );
                 iResultOfCreateProcessAsUser = Marshal.GetLastWin32Error();
             }
             finally
