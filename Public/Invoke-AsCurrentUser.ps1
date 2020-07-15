@@ -3,7 +3,7 @@ function Invoke-AsCurrentUser {
     param (
         [Parameter(Mandatory = $true)]
         [scriptblock]$ScriptBlock,
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [switch]$NoWait
     )
     if (!("murrayju.ProcessExtensions.ProcessExtensions" -as [type])) {
