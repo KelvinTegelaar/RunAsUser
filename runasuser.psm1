@@ -305,7 +305,7 @@ namespace RunAsUser
 
                 uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
                 startInfo.wShowWindow = (short)(visible ? SW.SW_SHOW : SW.SW_HIDE);
-                startInfo.lpDesktop = "winsta0\\default";
+                //startInfo.lpDesktop = "winsta0\\default";
 
                 IntPtr pEnv = IntPtr.Zero;
                 if (!NativeMethods.CreateEnvironmentBlock(ref pEnv, hUserToken, false))
