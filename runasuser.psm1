@@ -54,6 +54,11 @@ namespace RunAsUser
 
     internal class NativeMethods
     {
+        [DllImport("kernel32", SetLastError=true)]
+        public static extern int WaitForSingleObject(
+          IntPtr hHandle,
+          int dwMilliseconds);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool CloseHandle(
             IntPtr hSnapshot);
@@ -296,7 +301,7 @@ namespace RunAsUser
             }
         }
 
-        public static int StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true)
+        public static int StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true,int wait = -1)
         {
             using (var hUserToken = GetSessionUserToken())
             {
@@ -334,6 +339,7 @@ namespace RunAsUser
 
                     try
                     {
+                        NativeMethods.WaitForSingleObject( procInfo.hProcess, wait);
                         return procInfo.dwProcessId;
                     }
                     finally
