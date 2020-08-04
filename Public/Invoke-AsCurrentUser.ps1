@@ -6,6 +6,8 @@ function Invoke-AsCurrentUser {
         $ScriptBlock,
         [Parameter(Mandatory = $false)]
         [switch]$NoWait
+        [Parameter(Mandatory = $false)]
+        [switch]$UseWindowsPowerShell
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
@@ -18,8 +20,9 @@ function Invoke-AsCurrentUser {
     }
     else {
         try {
-            # Use the same PowerShell executable as the one that invoked the function
-            $pwshPath = (Get-Process -Id $pid).Path
+            # Use the same PowerShell executable as the one that invoked the function, Unless -UseWindowsPowerShell is defined
+           
+           if(!$UseWindowsPowerShell) { $pwshPath = (Get-Process -Id $pid).Path } else {$pwshPath = "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" }
             if ($NoWait) { $ProcWaitTime = 1 } else { $ProcWaitTime = -1 }
            [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
                 $pwshPath, "`"$pwshPath`" -ExecutionPolicy Bypass -Window Normal -EncodedCommand $($encodedcommand)",
