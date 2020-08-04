@@ -5,7 +5,7 @@ function Invoke-AsCurrentUser {
         [scriptblock]
         $ScriptBlock,
         [Parameter(Mandatory = $false)]
-        [switch]$NoWait
+        [switch]$NoWait,
         [Parameter(Mandatory = $false)]
         [switch]$UseWindowsPowerShell
     )
