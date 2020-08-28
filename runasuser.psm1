@@ -237,7 +237,7 @@ namespace RunAsUser
         #endregion
 
         // Gets the user token from the currently active session
-        private static SafeNativeHandle GetSessionUserToken()
+        private static SafeNativeHandle GetSessionUserToken(bool elevated)
         {
             var activeSessionId = INVALID_SESSION_ID;
             var pSessionInfo = IntPtr.Zero;
@@ -289,7 +289,7 @@ namespace RunAsUser
                 // default token then we already have the best token possible.
                 TokenElevationType elevationType = GetTokenElevationType(hImpersonationToken);
 
-                if (elevationType == TokenElevationType.TokenElevationTypeLimited)
+                if (elevationType == TokenElevationType.TokenElevationTypeLimited && elevated == true)
                 {
                     using (var linkedToken = GetTokenLinkedToken(hImpersonationToken))
                         return DuplicateTokenAsPrimary(linkedToken);
@@ -301,9 +301,9 @@ namespace RunAsUser
             }
         }
 
-        public static int StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true,int wait = -1)
+        public static int StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true,int wait = -1, bool elevated = true)
         {
-            using (var hUserToken = GetSessionUserToken())
+            using (var hUserToken = GetSessionUserToken(elevated))
             {
                 var startInfo = new NativeHelpers.STARTUPINFO();
                 startInfo.cb = Marshal.SizeOf(startInfo);

@@ -7,7 +7,9 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$NoWait,
         [Parameter(Mandatory = $false)]
-        [switch]$UseWindowsPowerShell
+        [switch]$UseWindowsPowerShell,
+        [Parameter(Mandatory = $false)]
+        [switch]$NonElevatedSession
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
@@ -22,12 +24,14 @@ function Invoke-AsCurrentUser {
         try {
             # Use the same PowerShell executable as the one that invoked the function, Unless -UseWindowsPowerShell is defined
            
-           if(!$UseWindowsPowerShell) { $pwshPath = (Get-Process -Id $pid).Path } else {$pwshPath = "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" }
+            if (!$UseWindowsPowerShell) { $pwshPath = (Get-Process -Id $pid).Path } else { $pwshPath = "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" }
             if ($NoWait) { $ProcWaitTime = 1 } else { $ProcWaitTime = -1 }
-           [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
+            if ($NonElevatedSession) { $RunAsAdmin = $false } else { $RunAsAdmin = $true }
+            [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
                 $pwshPath, "`"$pwshPath`" -ExecutionPolicy Bypass -Window Normal -EncodedCommand $($encodedcommand)",
-                (Split-Path $pwshPath -Parent), $false,$ProcWaitTime)
-        } catch {
+                (Split-Path $pwshPath -Parent), $false, $ProcWaitTime, $RunAsAdmin)
+        }
+        catch {
             Write-Error -Message "Could not execute as currently logged on user: $($_.Exception.Message)" -Exception $_.Exception
             return
         }
