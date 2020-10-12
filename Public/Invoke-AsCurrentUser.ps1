@@ -11,7 +11,7 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$NonElevatedSession,
         [Parameter(Mandatory = $false)]
-        [switch]$Visible = $false
+        [switch]$Visible
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
