@@ -9,7 +9,9 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$UseWindowsPowerShell,
         [Parameter(Mandatory = $false)]
-        [switch]$NonElevatedSession
+        [switch]$NonElevatedSession,
+        [Parameter(Mandatory = $false)]
+        [switch]$Visible
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
@@ -29,7 +31,7 @@ function Invoke-AsCurrentUser {
             if ($NonElevatedSession) { $RunAsAdmin = $false } else { $RunAsAdmin = $true }
             [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
                 $pwshPath, "`"$pwshPath`" -ExecutionPolicy Bypass -Window Normal -EncodedCommand $($encodedcommand)",
-                (Split-Path $pwshPath -Parent), $false, $ProcWaitTime, $RunAsAdmin)
+                (Split-Path $pwshPath -Parent), $Visible, $ProcWaitTime, $RunAsAdmin)
         }
         catch {
             Write-Error -Message "Could not execute as currently logged on user: $($_.Exception.Message)" -Exception $_.Exception
