@@ -16,7 +16,8 @@ function Invoke-AsCurrentUser {
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
     }
-    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
+    $ExpandedScriptBlock = $ExecutionContext.InvokeCommand.ExpandString($ScriptBlock)
+    $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ExpandedScriptBlock))
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
     if ($privs.State -eq "Disabled") {
         Write-Error -Message "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
