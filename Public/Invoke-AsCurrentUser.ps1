@@ -20,13 +20,11 @@ function Invoke-AsCurrentUser {
     }
     if ($CacheToDisk) {
         $ScriptGuid = new-guid
-        $ExpandedScriptBlock = $ExecutionContext.InvokeCommand.ExpandString($ScriptBlock)
-        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $ExpandedScriptBlock -Force
+        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $ScriptBlock -Force
         $pwshcommand = "-ExecutionPolicy Bypass -Window Normal -file `"$($ENV:TEMP)\$($ScriptGuid).ps1`""
     }
     else {
-        $ExpandedScriptBlock = $ExecutionContext.InvokeCommand.ExpandString($ScriptBlock)
-        $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ExpandedScriptBlock))
+        $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
         $pwshcommand = "-ExecutionPolicy Bypass -Window Normal -EncodedCommand $($encodedcommand)"
     }
     $OSLevel = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentVersion
