@@ -20,7 +20,8 @@ function Invoke-AsCurrentUser {
     }
     if ($CacheToDisk) {
         $ScriptGuid = new-guid
-        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $ScriptBlock -Force
+        $ExpandedScriptBlock = $ExecutionContext.InvokeCommand.ExpandString($ScriptBlock)
+        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $ExpandedScriptBlock -Force
         $pwshcommand = "-ExecutionPolicy Bypass -Window Normal -file `"$($ENV:TEMP)\$($ScriptGuid).ps1`""
     }
     else {
