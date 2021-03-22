@@ -34,7 +34,7 @@ function Invoke-AsCurrentUser {
         return
     }
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
-    if ($privs.State -eq "Disabled") {
+    if (!$privs -or $privs.State -eq "Disabled") {
         Write-Error -Message "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
         return
     }
