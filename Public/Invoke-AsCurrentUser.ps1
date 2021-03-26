@@ -9,6 +9,8 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$UseWindowsPowerShell,
         [Parameter(Mandatory = $false)]
+        [switch]$UseMicrosoftPowerShell,
+        [Parameter(Mandatory = $false)]
         [switch]$NonElevatedSession,
         [Parameter(Mandatory = $false)]
         [switch]$Visible,
@@ -33,6 +35,11 @@ function Invoke-AsCurrentUser {
         Write-Error -Message "The encoded script is longer than the command line parameter limit. Please execute the script with the -CacheToDisk option."
         return
     }
+    if ($UseMicrosoftPowerShell -and -not (Test-Path -Path "$env:ProgramFiles\PowerShell\7\pwsh.exe"))
+    {
+        Write-Error -Message "Not able to find Microsoft PowerShell v7 (pwsh.exe). Ensure that it is installed on this system"
+        return
+    }
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
     if (!$privs -or $privs.State -eq "Disabled") {
         Write-Error -Message "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
@@ -40,9 +47,11 @@ function Invoke-AsCurrentUser {
     }
     else {
         try {
-            # Use the same PowerShell executable as the one that invoked the function, Unless -UseWindowsPowerShell is defined
-           
-            if (!$UseWindowsPowerShell) { $pwshPath = (Get-Process -Id $pid).Path } else { $pwshPath = "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" }
+            # Use the same PowerShell executable as the one that invoked the function, Unless -UseWindowsPowerShell or -UseMicrosoftPowerShell is defined.
+            $pwshPath = if ($UseWindowsPowerShell) { "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" } 
+            elseif ($UseMicrosoftPowerShell) { "$($env:ProgramFiles)\PowerShell\7\pwsh.exe" }
+            else { (Get-Process -Id $pid).Path }
+            
             if ($NoWait) { $ProcWaitTime = 1 } else { $ProcWaitTime = -1 }
             if ($NonElevatedSession) { $RunAsAdmin = $false } else { $RunAsAdmin = $true }
             [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
