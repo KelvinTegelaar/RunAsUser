@@ -9,6 +9,8 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$UseWindowsPowerShell,
         [Parameter(Mandatory = $false)]
+        [switch]$UseMicrosoftPowerShell,
+        [Parameter(Mandatory = $false)]
         [switch]$NonElevatedSession,
         [Parameter(Mandatory = $false)]
         [switch]$Visible,
@@ -31,6 +33,11 @@ function Invoke-AsCurrentUser {
     if ($OSLevel -lt 6.2) { $MaxLength = 8190 } else { $MaxLength = 32767 }
     if ($encodedcommand.length -gt $MaxLength -and $CacheToDisk -eq $false) {
         Write-Error -Message "The encoded script is longer than the command line parameter limit. Please execute the script with the -CacheToDisk option."
+        return
+    }
+    if ( $UseMicrosoftPowerShell -and -not (Test-Path -Path "$env:ProgramFiles\PowerShell\7\pwsh.exe"))
+    {
+        Write-Error -Message "Not able to find Microsoft PowerShell (pwsh.exe). Ensure that it is installed on this system"
         return
     }
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
