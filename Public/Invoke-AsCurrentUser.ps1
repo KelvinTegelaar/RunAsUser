@@ -1,9 +1,60 @@
 ﻿function Invoke-AsCurrentUser {
+    <#
+    .SYNOPSIS
+    Function for running specified code under all logged users (impersonate the currently logged on user).
+    Common use case is when code is running under SYSTEM and you need to run something under logged users (to modify user registry etc).
+
+    .DESCRIPTION
+    Function for running specified code under all logged users (impersonate the currently logged on user).
+    Common use case is when code is running under SYSTEM and you need to run something under logged users (to modify user registry etc).
+
+    You have to run this under SYSTEM account, or ADMIN account (but in such case helper sched. task will be created, content to run will be saved to disk and called from sched. task under SYSTEM account).
+
+    Helper files and sched. tasks are automatically deleted.
+
+    .PARAMETER ScriptBlock
+    Scriptblock that should be run under logged users.
+
+    .PARAMETER ComputerName
+    Name of computer, where to run this.
+    If specified, psremoting will be used to connect, this function with scriptBlock to run will be saved to disk and run through helper scheduled task under SYSTEM account.
+
+    .PARAMETER ReturnTranscript
+    Return output of the scriptBlock being run.
+
+    .PARAMETER NoWait
+    Don't wait for scriptBlock code finish.
+
+    .PARAMETER UseWindowsPowerShell
+    Use default PowerShell exe instead of of the one, this was launched under.
+
+    .PARAMETER NonElevatedSession
+    Run non elevated.
+
+    .PARAMETER Visible
+    Parameter description
+
+    .PARAMETER CacheToDisk
+    Necessity for long scriptBlocks. Content will be saved to disk and run from there.
+
+    .EXAMPLE
+    Invoke-AsCurrentUser {New-Item C:\temp\$env:username}
+
+    On local computer will call given scriptblock under all logged users.
+
+    .NOTES
+    Based on https://github.com/KelvinTegelaar/RunAsUser
+    #>
+
+    [Alias("Invoke-AsLoggedUser")]
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
         [scriptblock]$ScriptBlock,
+        [Parameter(Mandatory = $false)]
         [string] $ComputerName,
+        [Parameter(Mandatory = $false)]
+        [switch] $ReturnTranscript,
         [Parameter(Mandatory = $false)]
         [switch]$NoWait,
         [Parameter(Mandatory = $false)]
@@ -15,6 +66,14 @@
         [Parameter(Mandatory = $false)]
         [switch]$CacheToDisk
     )
+
+    if ($ReturnTranscript -and $NoWait) {
+        throw "It is not possible to return transcript if you don't want to wait for code finish"
+    }
+
+    #region variables
+    $TranscriptPath = "C:\78943728TEMP63287789\Invoke-AsCurrentUser.log"
+    #endregion variables
 
     #region functions
     function _Invoke-AsCurrentUser {
@@ -462,18 +521,18 @@ namespace RunAsUser
     }
     #endregion functions
 
-    #region prepare Invoke-Script parameters
+    #region prepare Invoke-Command parameters
     # export this function to remote session (so I am not dependant whether it exists there or not)
     $allFunctionDefs = "function Invoke-AsCurrentUser { ${function:Invoke-AsCurrentUser} }"
 
     $param = @{
-        argumentList = $scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference
+        argumentList = $scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript
     }
 
     if ($computerName -and $computerName -notmatch "localhost|$env:COMPUTERNAME") {
         $param.computerName = $computerName
     }
-    #endregion prepare Invoke-Script parameters
+    #endregion prepare Invoke-Command parameters
 
     #region rights checks
     $hasAdminRights = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
@@ -484,10 +543,10 @@ namespace RunAsUser
     #endregion rights checks
 
     if ($param.computerName) {
-        Write-Verbose "Will be run on computer $computerName"
+        Write-Verbose "Will be run on remote computer $computerName"
 
         Invoke-Command @param -ScriptBlock {
-            param ($scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference)
+            param ($scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript)
 
             # convert passed string back to scriptblock
             $scriptBlock = [Scriptblock]::Create($scriptBlock)
@@ -503,14 +562,24 @@ namespace RunAsUser
             if ($NonElevatedSession) { $param.NonElevatedSession = $NonElevatedSession }
             if ($Visible) { $param.Visible = $Visible }
             if ($CacheToDisk) { $param.CacheToDisk = $CacheToDisk }
+            if ($ReturnTranscript) { $param.ReturnTranscript = $ReturnTranscript }
 
+            # run again "locally" on remote computer
             Invoke-AsCurrentUser @param
         }
     } elseif (!$ComputerName -and !$hasSystemRights -and $hasAdminRights) {
         # create helper sched. task, that will under SYSTEM account run given scriptblock using Invoke-AsCurrentUser
         Write-Verbose "Running locally as ADMIN"
 
-        # create helper script, that will be called from sched. task
+        # create helper script, that will be called from sched. task under SYSTEM account
+        if ($VerbosePreference -eq "Continue") { $VerboseParam = "-Verbose" }
+        if ($ReturnTranscript) { $ReturnTranscriptParam = "-ReturnTranscript" }
+        if ($NoWait) { $NoWaitParam = "-NoWait" }
+        if ($UseWindowsPowerShell) { $UseWindowsPowerShellParam = "-UseWindowsPowerShell" }
+        if ($NonElevatedSession) { $NonElevatedSessionParam = "-NonElevatedSession" }
+        if ($Visible) { $VisibleParam = "-Visible" }
+        if ($CacheToDisk) { $CacheToDiskParam = "-CacheToDisk" }
+
         $helperScriptText = @"
 # define function Invoke-AsCurrentUser
 $allFunctionDefs
@@ -523,15 +592,17 @@ $($ScriptBlock.ToString())
 `$scriptBlock = [Scriptblock]::Create(`$scriptBlockText)
 
 # run scriptblock under all local logged users
-Invoke-AsCurrentUser -ScriptBlock `$scriptblock
+Invoke-AsCurrentUser -ScriptBlock `$scriptblock $VerboseParam $ReturnTranscriptParam $NoWaitParam $UseWindowsPowerShellParam $NonElevatedSessionParam $VisibleParam $CacheToDiskParam
 "@
+
+        $helperScriptText
 
         $tmpScript = "$env:windir\Temp\$(Get-Random).ps1"
         Write-Verbose "Creating helper script $tmpScript"
         $helperScriptText | Out-File -FilePath $tmpScript -Force -Encoding utf8
 
         # create helper sched. task
-        $taskName = "RunAsUser"
+        $taskName = "RunAsUser_" + (Get-Random)
         Write-Verbose "Creating helper scheduled task $taskName"
         $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd
         $taskAction = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass -File `"$tmpScript`""
@@ -541,17 +612,47 @@ Invoke-AsCurrentUser -ScriptBlock `$scriptblock
         Write-Verbose "Starting helper scheduled task $taskName"
         Start-ScheduledTask $taskName
 
+        # wait for helper sched. task finish
+        while ((Get-ScheduledTask $taskName -ErrorAction silentlyContinue).state -ne "Ready") {
+            Write-Warning "Waiting for task $taskName to finish"
+            Start-Sleep -Milliseconds 200
+        }
+        if (($lastTaskResult = (Get-ScheduledTaskInfo $taskName).lastTaskResult) -ne 0) {
+            Write-Error "Task failed with error $lastTaskResult"
+        }
+
         # delete helper sched. task
-        Start-Sleep 10
         Write-Verbose "Removing helper scheduled task $taskName"
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+
         # delete helper script
         Write-Verbose "Removing helper script $tmpScript"
         Remove-Item $tmpScript -Force
+
+        # read & delete transcript
+        if ($ReturnTranscript) {
+            # return just interesting part of transcript
+            if (Test-Path $TranscriptPath) {
+                ((Get-Content $TranscriptPath -Raw) -Split [regex]::escape('**********************'))[2]
+            } else {
+                Write-Warning "There is no transcript, command probably failed"
+            }
+            Remove-Item (Split-Path $TranscriptPath -Parent) -Recurse -Force
+        }
     } elseif (!$ComputerName -and !$hasSystemRights -and !$hasAdminRights) {
         throw "Insufficient rights (not ADMIN nor SYSTEM)"
     } elseif (!$ComputerName -and $hasSystemRights) {
         Write-Verbose "Running locally as SYSTEM"
+
+        if ($ReturnTranscript) {
+            Write-Verbose "Return the transcript"
+            # modify scriptBlock to contain creation of transcript
+            $TranscriptStart = "Start-Transcript $TranscriptPath -Append" # append because code can run under more than one user at a time
+            $TranscriptEnd = 'Stop-Transcript'
+            $ScriptBlockContent = ($TranscriptStart + "`n`n" + $ScriptBlock.ToString() + "`n`n" + $TranscriptStop)
+            $scriptBlock = [Scriptblock]::Create($ScriptBlockContent)
+        }
+
         _Invoke-AsCurrentUser
     } else {
         throw "undefined"
