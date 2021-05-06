@@ -37,10 +37,34 @@
     .PARAMETER CacheToDisk
     Necessity for long scriptBlocks. Content will be saved to disk and run from there.
 
+    .PARAMETER Argument
+    If you need to pass some variables to the scriptBlock.
+    Hashtable where keys will be names of variables and values will be, well values :)
+
+    Example:
+    [hashtable]$Argument = @{
+        name = "John"
+        cities = "Boston", "Prague"
+        hash = @{var1 = 'value1','value11'; var2 = @{ key ='value' }}
+    }
+
+    Will in beginning of the scriptBlock define variables:
+    $name = 'John'
+    $cities = 'Boston', 'Prague'
+    $hash = @{var1 = 'value1','value11'; var2 = @{ key ='value' }
+
+    ! ONLY STRING, ARRAY and HASHTABLE variables are supported !
+
     .EXAMPLE
     Invoke-AsCurrentUser {New-Item C:\temp\$env:username}
 
     On local computer will call given scriptblock under all logged users.
+
+    .EXAMPLE
+    Invoke-AsCurrentUser {New-Item "$env:USERPROFILE\$name"} -computerName PC-01 -ReturnTranscript -Argument @{name = 'someFolder'} -Verbose
+
+    On computer PC-01 will call given scriptblock under all logged users i.e. will create folder 'someFolder' in root of each user profile.
+    Transcript of the run scriptBlock will be outputted in console too.
 
     .NOTES
     Based on https://github.com/KelvinTegelaar/RunAsUser
@@ -64,7 +88,9 @@
         [Parameter(Mandatory = $false)]
         [switch]$Visible,
         [Parameter(Mandatory = $false)]
-        [switch]$CacheToDisk
+        [switch]$CacheToDisk,
+        [Parameter(Mandatory = $false)]
+        [hashtable]$Argument
     )
 
     if ($ReturnTranscript -and $NoWait) {
@@ -76,6 +102,98 @@
     #endregion variables
 
     #region functions
+    function Create-VariableTextDefinition {
+        <#
+        .SYNOPSIS
+        Function will convert hashtable content to text definition of variables, where hash key is name of variable and hash value is therefore value of this new variable.
+
+        .PARAMETER hashTable
+        HashTable which content will be transformed to variables
+
+        .PARAMETER returnHashItself
+        Returns text representation of hashTable parameter value itself.
+
+        .EXAMPLE
+        [hashtable]$Argument = @{
+            string = "jmeno"
+            array = "neco", "necojineho"
+            hash = @{var1 = 'value1','value11'; var2 = @{ key ='value' }}
+        }
+
+        Create-VariableTextDefinition $Argument
+    #>
+
+        [CmdletBinding()]
+        [Parameter(Mandatory = $true)]
+        param (
+            [hashtable] $hashTable
+            ,
+            [switch] $returnHashItself
+        )
+
+        function _convertToStringRepresentation {
+            param ($object)
+
+            $type = $object.gettype()
+            if ($type.Name -eq 'Object[]' -and $type.BaseType.Name -eq 'Array') {
+                Write-Verbose "array"
+                ($object | % {
+                        _convertToStringRepresentation $_
+                    }) -join ", "
+            } elseif ($type.Name -eq 'HashTable' -and $type.BaseType.Name -eq 'Object') {
+                Write-Verbose "hash"
+                $hashContent = $object.getenumerator() | % {
+                    '{0} = {1};' -f $_.key, (_convertToStringRepresentation $_.value)
+                }
+                "@{$hashContent}"
+            } elseif ($type.Name -eq 'String') {
+                Write-Verbose "string"
+                "'$object'"
+            } else {
+                throw "undefined"
+            }
+        }
+        if ($returnHashItself) {
+            _convertToStringRepresentation $hashTable
+        } else {
+            $hashTable.GetEnumerator() | % {
+                $variableName = $_.Key
+                $variableValue = _convertToStringRepresentation $_.value
+                "`$$variableName = $variableValue"
+            }
+        }
+    }
+
+    function Get-LoggedOnUser {
+        quser | Select-Object -Skip 1 | ForEach-Object {
+            $CurrentLine = $_.Trim() -Replace '\s+', ' ' -Split '\s'
+            $HashProps = @{
+                UserName     = $CurrentLine[0]
+                ComputerName = $env:COMPUTERNAME
+            }
+
+            # If session is disconnected different fields will be selected
+            if ($CurrentLine[2] -eq 'Disc') {
+                $HashProps.SessionName = $null
+                $HashProps.Id = $CurrentLine[1]
+                $HashProps.State = $CurrentLine[2]
+                $HashProps.IdleTime = $CurrentLine[3]
+                $HashProps.LogonTime = $CurrentLine[4..6] -join ' '
+            } else {
+                $HashProps.SessionName = $CurrentLine[1]
+                $HashProps.Id = $CurrentLine[2]
+                $HashProps.State = $CurrentLine[3]
+                $HashProps.IdleTime = $CurrentLine[4]
+                $HashProps.LogonTime = $CurrentLine[5..7] -join ' '
+            }
+
+            $obj = New-Object -TypeName PSCustomObject -Property $HashProps | Select-Object -Property UserName, ComputerName, SessionName, Id, State, IdleTime, LogonTime
+            #insert a new type name for the object
+            $obj.psobject.Typenames.Insert(0, 'My.GetLoggedOnUser')
+            $obj
+        }
+    }
+
     function _Invoke-AsCurrentUser {
         if (!("RunAsUser.ProcessExtensions" -as [type])) {
             $source = @"
@@ -523,10 +641,10 @@ namespace RunAsUser
 
     #region prepare Invoke-Command parameters
     # export this function to remote session (so I am not dependant whether it exists there or not)
-    $allFunctionDefs = "function Invoke-AsCurrentUser { ${function:Invoke-AsCurrentUser} }"
+    $allFunctionDefs = "function Invoke-AsCurrentUser { ${function:Invoke-AsCurrentUser} }; function Create-VariableTextDefinition { ${function:Create-VariableTextDefinition} }; function Get-LoggedOnUser { ${function:Get-LoggedOnUser} } "
 
     $param = @{
-        argumentList = $scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript
+        argumentList = $scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript, $Argument
     }
 
     if ($computerName -and $computerName -notmatch "localhost|$env:COMPUTERNAME") {
@@ -546,14 +664,20 @@ namespace RunAsUser
         Write-Verbose "Will be run on remote computer $computerName"
 
         Invoke-Command @param -ScriptBlock {
-            param ($scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript)
-
-            # convert passed string back to scriptblock
-            $scriptBlock = [Scriptblock]::Create($scriptBlock)
+            param ($scriptBlock, $NoWait, $UseWindowsPowerShell, $NonElevatedSession, $Visible, $CacheToDisk, $allFunctionDefs, $VerbosePreference, $ReturnTranscript, $Argument)
 
             foreach ($functionDef in $allFunctionDefs) {
                 . ([ScriptBlock]::Create($functionDef))
             }
+
+            # check that there is someone logged
+            if ((Get-LoggedOnUser).state -notcontains "Active") {
+                Write-Warning "On $env:COMPUTERNAME is no user logged in"
+                return
+            }
+
+            # convert passed string back to scriptblock
+            $scriptBlock = [Scriptblock]::Create($scriptBlock)
 
             $param = @{scriptBlock = $scriptBlock }
             if ($VerbosePreference -eq "Continue") { $param.verbose = $true }
@@ -563,6 +687,7 @@ namespace RunAsUser
             if ($Visible) { $param.Visible = $Visible }
             if ($CacheToDisk) { $param.CacheToDisk = $CacheToDisk }
             if ($ReturnTranscript) { $param.ReturnTranscript = $ReturnTranscript }
+            if ($Argument) { $param.Argument = $Argument }
 
             # run again "locally" on remote computer
             Invoke-AsCurrentUser @param
@@ -579,6 +704,10 @@ namespace RunAsUser
         if ($NonElevatedSession) { $NonElevatedSessionParam = "-NonElevatedSession" }
         if ($Visible) { $VisibleParam = "-Visible" }
         if ($CacheToDisk) { $CacheToDiskParam = "-CacheToDisk" }
+        if ($Argument) {
+            $ArgumentHashText = Create-VariableTextDefinition $Argument -returnHashItself
+            $ArgumentParam = "-Argument $ArgumentHashText"
+        }
 
         $helperScriptText = @"
 # define function Invoke-AsCurrentUser
@@ -592,10 +721,12 @@ $($ScriptBlock.ToString())
 `$scriptBlock = [Scriptblock]::Create(`$scriptBlockText)
 
 # run scriptblock under all local logged users
-Invoke-AsCurrentUser -ScriptBlock `$scriptblock $VerboseParam $ReturnTranscriptParam $NoWaitParam $UseWindowsPowerShellParam $NonElevatedSessionParam $VisibleParam $CacheToDiskParam
+Invoke-AsCurrentUser -ScriptBlock `$scriptblock $VerboseParam $ReturnTranscriptParam $NoWaitParam $UseWindowsPowerShellParam $NonElevatedSessionParam $VisibleParam $CacheToDiskParam $ArgumentParam
 "@
 
-        $helperScriptText
+        Write-Verbose "####### HELPER SCRIPT TEXT"
+        Write-Verbose $helperScriptText
+        Write-Verbose "####### END"
 
         $tmpScript = "$env:windir\Temp\$(Get-Random).ps1"
         Write-Verbose "Creating helper script $tmpScript"
@@ -634,22 +765,33 @@ Invoke-AsCurrentUser -ScriptBlock `$scriptblock $VerboseParam $ReturnTranscriptP
             # return just interesting part of transcript
             if (Test-Path $TranscriptPath) {
                 ((Get-Content $TranscriptPath -Raw) -Split [regex]::escape('**********************'))[2]
+                Remove-Item (Split-Path $TranscriptPath -Parent) -Recurse -Force
             } else {
-                Write-Warning "There is no transcript, command probably failed"
+                Write-Warning "There is no transcript, command probably failed!"
             }
-            Remove-Item (Split-Path $TranscriptPath -Parent) -Recurse -Force
         }
     } elseif (!$ComputerName -and !$hasSystemRights -and !$hasAdminRights) {
         throw "Insufficient rights (not ADMIN nor SYSTEM)"
     } elseif (!$ComputerName -and $hasSystemRights) {
         Write-Verbose "Running locally as SYSTEM"
 
-        if ($ReturnTranscript) {
-            Write-Verbose "Return the transcript"
-            # modify scriptBlock to contain creation of transcript
-            $TranscriptStart = "Start-Transcript $TranscriptPath -Append" # append because code can run under more than one user at a time
-            $TranscriptEnd = 'Stop-Transcript'
-            $ScriptBlockContent = ($TranscriptStart + "`n`n" + $ScriptBlock.ToString() + "`n`n" + $TranscriptStop)
+        if ($Argument -or $ReturnTranscript) {
+            # define passed variables
+            if ($Argument) {
+                # convert hash to variables text definition
+                $VariableTextDef = Create-VariableTextDefinition $Argument
+            }
+
+            if ($ReturnTranscript) {
+                # modify scriptBlock to contain creation of transcript
+                $TranscriptStart = "Start-Transcript $TranscriptPath -Append" # append because code can run under more than one user at a time
+                $TranscriptEnd = 'Stop-Transcript'
+            }
+
+            $ScriptBlockContent = ($TranscriptStart + "`n`n" + $VariableTextDef + "`n`n" + $ScriptBlock.ToString() + "`n`n" + $TranscriptStop)
+            Write-Verbose "####### SCRIPTBLOCK TO RUN"
+            Write-Verbose $ScriptBlockContent
+            Write-Verbose "#######"
             $scriptBlock = [Scriptblock]::Create($ScriptBlockContent)
         }
 
