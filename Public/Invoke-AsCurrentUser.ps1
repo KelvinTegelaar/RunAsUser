@@ -2,7 +2,7 @@ function Invoke-AsCurrentUser {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [scriptblock]
+        [System.Management.Automation.ScriptBlock]
         $ScriptBlock,
         [Parameter(Mandatory = $false)]
         [switch]$NoWait,
@@ -19,6 +19,8 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$CaptureOutput
     )
+    # Fixed bug: Cannot convert the "xxxx" value of type "System.String" to type "System.Management.Automation.ScriptBlock"
+    $ScriptBlock = [System.Management.Automation.ScriptBlock]::Create($ScriptBlock)
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
     }
