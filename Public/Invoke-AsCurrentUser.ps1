@@ -17,7 +17,9 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$CacheToDisk,
         [Parameter(Mandatory = $false)]
-        [switch]$CaptureOutput
+        [switch]$CaptureOutput,
+        [Parameter(Mandatory = $false)]
+        [switch]$NoCheckingImpersonatePrivilege
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
@@ -43,7 +45,7 @@ function Invoke-AsCurrentUser {
         return
     }
     $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
-    if (!$privs -or $privs.State -eq "Disabled") {
+    if ((!$privs -or $privs.State -eq "Disabled") -and $NoCheckingImpersonatePrivilege -eq $false) {
         Write-Error -Message "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
         return
     }
