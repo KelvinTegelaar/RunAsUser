@@ -1,13 +1,27 @@
 $script:source = @"
 using Microsoft.Win32.SafeHandles;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 
 namespace RunAsUser
 {
     internal class NativeHelpers
     {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LUID
+        {
+            public int LowPart;
+            public int HighPart;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LUID_AND_ATTRIBUTES
+        {
+            public LUID Luid;
+            public PrivilegeAttributes Attributes;
+        }
         [StructLayout(LayoutKind.Sequential)]
         public struct PROCESS_INFORMATION
         {
@@ -37,6 +51,13 @@ namespace RunAsUser
             public IntPtr hStdInput;
             public IntPtr hStdOutput;
             public IntPtr hStdError;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct TOKEN_PRIVILEGES
+        {
+            public int PrivilegeCount;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 1)]
+            public LUID_AND_ATTRIBUTES[] Privileges;
         }
         [StructLayout(LayoutKind.Sequential)]
         public struct WTS_SESSION_INFO
@@ -92,6 +113,8 @@ namespace RunAsUser
             SECURITY_IMPERSONATION_LEVEL ImpersonationLevel,
             TOKEN_TYPE TokenType,
             out SafeNativeHandle DuplicateTokenHandle);
+        [DllImport("kernel32")]
+        public static extern IntPtr GetCurrentProcess();
         [DllImport("advapi32.dll", SetLastError = true)]
         public static extern bool GetTokenInformation(
             SafeHandle TokenHandle,
@@ -99,6 +122,17 @@ namespace RunAsUser
             SafeMemoryBuffer TokenInformation,
             int TokenInformationLength,
             out int ReturnLength);
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern bool LookupPrivilegeName(
+            string lpSystemName,
+            ref NativeHelpers.LUID lpLuid,
+            StringBuilder lpName,
+            ref Int32 cchName);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool OpenProcessToken(
+            IntPtr ProcessHandle,
+            TokenAccessLevels DesiredAccess,
+            out SafeNativeHandle TokenHandle);
         [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern bool WTSEnumerateSessions(
             IntPtr hServer,
@@ -225,6 +259,15 @@ namespace RunAsUser
         WTSReset,
         WTSDown,
         WTSInit
+    }
+    [Flags]
+    public enum PrivilegeAttributes : uint
+    {
+        Disabled = 0x00000000,
+        EnabledByDefault = 0x00000001,
+        Enabled = 0x00000002,
+        Removed = 0x00000004,
+        UsedForAccess = 0x80000000,
     }
     public class Win32Exception : System.ComponentModel.Win32Exception
     {
@@ -435,6 +478,40 @@ namespace RunAsUser
             }
             return pDupToken;
         }
+        public static Dictionary<String, PrivilegeAttributes> GetTokenPrivileges()
+        {
+            Dictionary<string, PrivilegeAttributes> privileges = new Dictionary<string, PrivilegeAttributes>();
+
+            using (SafeNativeHandle hToken = OpenProcessToken(NativeMethods.GetCurrentProcess(), TokenAccessLevels.Query))
+            using (SafeMemoryBuffer tokenInfo = GetTokenInformation(hToken, 3))
+            {
+                NativeHelpers.TOKEN_PRIVILEGES privilegeInfo = (NativeHelpers.TOKEN_PRIVILEGES)Marshal.PtrToStructure(
+                    tokenInfo.DangerousGetHandle(), typeof(NativeHelpers.TOKEN_PRIVILEGES));
+
+                IntPtr ptrOffset = IntPtr.Add(tokenInfo.DangerousGetHandle(), Marshal.SizeOf(privilegeInfo.PrivilegeCount));
+                for (int i = 0; i < privilegeInfo.PrivilegeCount; i++)
+                {
+                    NativeHelpers.LUID_AND_ATTRIBUTES info = (NativeHelpers.LUID_AND_ATTRIBUTES)Marshal.PtrToStructure(ptrOffset,
+                        typeof(NativeHelpers.LUID_AND_ATTRIBUTES));
+
+                    int nameLen = 0;
+                    NativeHelpers.LUID privLuid = info.Luid;
+                    NativeMethods.LookupPrivilegeName(null, ref privLuid, null, ref nameLen);
+
+                    StringBuilder name = new StringBuilder(nameLen + 1);
+                    if (!NativeMethods.LookupPrivilegeName(null, ref privLuid, name, ref nameLen))
+                    {
+                        throw new Win32Exception("LookupPrivilegeName() failed");
+                    }
+
+                    privileges[name.ToString()] = info.Attributes;
+
+                    ptrOffset = IntPtr.Add(ptrOffset, Marshal.SizeOf(typeof(NativeHelpers.LUID_AND_ATTRIBUTES)));
+                }
+            }
+
+            return privileges;
+        }
         private static TokenElevationType GetTokenElevationType(SafeHandle hToken)
         {
             using (SafeMemoryBuffer tokenInfo = GetTokenInformation(hToken, 18))
@@ -463,6 +540,15 @@ namespace RunAsUser
             if (!NativeMethods.GetTokenInformation(hToken, infoClass, tokenInfo, returnLength, out returnLength))
                 throw new Win32Exception(String.Format("GetTokenInformation({0}) failed", infoClass));
             return tokenInfo;
+        }
+        private static SafeNativeHandle OpenProcessToken(IntPtr process, TokenAccessLevels access)
+        {
+            SafeNativeHandle hToken = null;
+            if (!NativeMethods.OpenProcessToken(process, access, out hToken))
+            {
+                throw new Win32Exception("OpenProcessToken() failed");
+            }
+            return hToken;
         }
     }
 }
