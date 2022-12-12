@@ -247,6 +247,7 @@ namespace RunAsUser
         private static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
         private const int HANDLE_FLAG_INHERIT = 0x00000001;
         private const int STARTF_USESTDHANDLES = 0x00000100;
+        private const int CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
         #endregion
         // Gets the user token from the currently active session
         private static SafeNativeHandle GetSessionUserToken(bool elevated)
@@ -327,7 +328,7 @@ namespace RunAsUser
 
             var startInfo = new NativeHelpers.STARTUPINFO();
             startInfo.cb = Marshal.SizeOf(startInfo);
-            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
+            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
             startInfo.wShowWindow = (short)(visible ? SW.SW_SHOW : SW.SW_HIDE);
             startInfo.hStdOutput = out_write;
             startInfo.hStdError = err_write;
