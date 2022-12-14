@@ -42,18 +42,18 @@ function Invoke-AsCurrentUser {
         Write-Error -Message "Not able to find Microsoft PowerShell v7 (pwsh.exe). Ensure that it is installed on this system"
         return
     }
-    $privs = whoami /priv /fo csv | ConvertFrom-Csv | Where-Object { $_.'Privilege Name' -eq 'SeDelegateSessionUserImpersonatePrivilege' }
-    if (!$privs -or $privs.State -eq "Disabled") {
+    $privs = [RunAsUser.ProcessExtensions]::GetTokenPrivileges()['SeDelegateSessionUserImpersonatePrivilege']
+    if (-not $privs -or ($privs -band [RunAsUser.PrivilegeAttributes]::Disabled)) {
         Write-Error -Message "Not running with correct privilege. You must run this script as system or have the SeDelegateSessionUserImpersonatePrivilege token."
         return
     }
     else {
         try {
             # Use the same PowerShell executable as the one that invoked the function, Unless -UseWindowsPowerShell or -UseMicrosoftPowerShell is defined.
-            $pwshPath = if ($UseWindowsPowerShell) { "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" } 
+            $pwshPath = if ($UseWindowsPowerShell) { "$($ENV:windir)\system32\WindowsPowerShell\v1.0\powershell.exe" }
             elseif ($UseMicrosoftPowerShell) { "$($env:ProgramFiles)\PowerShell\7\pwsh.exe" }
             else { (Get-Process -Id $pid).Path }
-            
+
             if ($NoWait) { $ProcWaitTime = 1 } else { $ProcWaitTime = -1 }
             if ($NonElevatedSession) { $RunAsAdmin = $false } else { $RunAsAdmin = $true }
             [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
