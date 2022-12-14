@@ -371,7 +371,7 @@ namespace RunAsUser
 
             var startInfo = new NativeHelpers.STARTUPINFO();
             startInfo.cb = Marshal.SizeOf(startInfo);
-            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(breakaway ? CREATE_BREAKAWAY_FROM_JOB : CREATE_UNICODE_ENVIRONMENT ) | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
+            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(breakaway ? CREATE_BREAKAWAY_FROM_JOB : 0 ) | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
             startInfo.wShowWindow = (short)(visible ? SW.SW_SHOW : SW.SW_HIDE);
             startInfo.hStdOutput = out_write;
             startInfo.hStdError = err_write;
