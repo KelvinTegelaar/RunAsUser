@@ -20,17 +20,26 @@ function Invoke-AsCurrentUser {
         [switch]$CaptureOutput,
         [Parameter(Mandatory = $false)]
         [switch]$Breakaway
+        [switch]$ExpandStringVariables
+
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
     }
+
+    if ($ExpandStringVariables) {
+        $innerScriptBlock = $ExecutionContext.InvokeCommand.ExpandString($ScriptBlock)
+    } else {
+        $innerScriptBlock = $ScriptBlock
+    }
+
     if ($CacheToDisk) {
         $ScriptGuid = new-guid
-        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $ScriptBlock -Force
+        $null = New-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Value $innerScriptBlock -Force
         $pwshcommand = "-ExecutionPolicy Bypass -Window Normal -file `"$($ENV:TEMP)\$($ScriptGuid).ps1`""
     }
     else {
-        $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($ScriptBlock))
+        $encodedcommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($innerScriptBlock))
         $pwshcommand = "-ExecutionPolicy Bypass -Window Normal -EncodedCommand $($encodedcommand)"
     }
     $OSLevel = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentVersion
