@@ -290,6 +290,7 @@ namespace RunAsUser
         private static readonly IntPtr WTS_CURRENT_SERVER_HANDLE = IntPtr.Zero;
         private const int HANDLE_FLAG_INHERIT = 0x00000001;
         private const int STARTF_USESTDHANDLES = 0x00000100;
+        private const int CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
         #endregion
         // Gets the user token from the currently active session
         private static SafeNativeHandle GetSessionUserToken(bool elevated)
@@ -354,7 +355,7 @@ namespace RunAsUser
         private static IntPtr err_read;
         private static IntPtr err_write;
         private static int BUFSIZE = 4096;
-        public static string StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true, int wait = -1, bool elevated = true, bool redirectOutput = true)
+        public static string StartProcessAsCurrentUser(string appPath, string cmdLine = null, string workDir = null, bool visible = true, int wait = -1, bool elevated = true, bool redirectOutput = true, bool breakaway = false )
         {
             NativeHelpers.SECURITY_ATTRIBUTES saAttr = new NativeHelpers.SECURITY_ATTRIBUTES();
             saAttr.nLength = Marshal.SizeOf(typeof(NativeHelpers.SECURITY_ATTRIBUTES));
@@ -370,7 +371,7 @@ namespace RunAsUser
 
             var startInfo = new NativeHelpers.STARTUPINFO();
             startInfo.cb = Marshal.SizeOf(startInfo);
-            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
+            uint dwCreationFlags = CREATE_UNICODE_ENVIRONMENT | (uint)(breakaway ? CREATE_BREAKAWAY_FROM_JOB : 0 ) | (uint)(visible ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW);
             startInfo.wShowWindow = (short)(visible ? SW.SW_SHOW : SW.SW_HIDE);
             startInfo.hStdOutput = out_write;
             startInfo.hStdError = err_write;

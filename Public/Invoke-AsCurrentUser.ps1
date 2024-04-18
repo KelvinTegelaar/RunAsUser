@@ -19,7 +19,9 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$CaptureOutput,
         [Parameter(Mandatory = $false)]
+        [switch]$Breakaway
         [switch]$ExpandStringVariables
+
     )
     if (!("RunAsUser.ProcessExtensions" -as [type])) {
         Add-Type -TypeDefinition $script:source -Language CSharp
@@ -67,7 +69,7 @@ function Invoke-AsCurrentUser {
             if ($NonElevatedSession) { $RunAsAdmin = $false } else { $RunAsAdmin = $true }
             [RunAsUser.ProcessExtensions]::StartProcessAsCurrentUser(
                 $pwshPath, "`"$pwshPath`" $pwshcommand",
-                (Split-Path $pwshPath -Parent), $Visible, $ProcWaitTime, $RunAsAdmin, $CaptureOutput)
+                (Split-Path $pwshPath -Parent), $Visible, $ProcWaitTime, $RunAsAdmin, $CaptureOutput, $Breakaway )
             if ($CacheToDisk) { $null = remove-item "$($ENV:TEMP)\$($ScriptGuid).ps1" -Force }
         }
         catch {
