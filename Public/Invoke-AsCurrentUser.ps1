@@ -19,7 +19,7 @@ function Invoke-AsCurrentUser {
         [Parameter(Mandatory = $false)]
         [switch]$CaptureOutput,
         [Parameter(Mandatory = $false)]
-        [switch]$Breakaway
+        [switch]$Breakaway,
         [switch]$ExpandStringVariables
 
     )
